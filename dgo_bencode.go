@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"sort"
+	"strings"
 )
 
 var (
@@ -339,10 +340,69 @@ func decodeMap(r io.Reader) (dict map[string]any, err error) {
 	return
 }
 
-func DgoTest(r io.Reader) (dict map[string]any, err error) {
-	return decodeMap(r)
+func BencodeEncode(w io.Writer, obj any) (err error) {
+	kindOfObj := reflect.TypeOf(obj).Kind()
+	switch kindOfObj {
+	case reflect.Int:
+		encodeInt(w, obj.(int))
+	case reflect.String:
+		encodeString(w, obj.(string))
+	case reflect.Slice:
+		encodeSlice(w, obj.([]any))
+	case reflect.Map:
+		encodeMap(w, obj.(map[string]any))
+	}
+	return nil
 }
 
-func DgoTestEncode(w io.Writer, dict map[string]any) int {
-	return encodeMap(w, dict)
+func BencodeDecodeFromReader(r io.Reader) (objs []any, err error) {
+	br, ok := r.(*bufio.Reader)
+	if !ok {
+		br = bufio.NewReader(r)
+	}
+
+	for {
+		temp, err := br.ReadByte()
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			break
+		}
+		br.UnreadByte()
+
+		if temp == 'i' {
+			num, err := decodeInt(br)
+			if err != nil {
+				return objs, err
+			}
+			objs = append(objs, num)
+		} else if temp >= '0' && temp <= '9' {
+			str, err := decodeString(br)
+			if err != nil {
+				return objs, err
+			}
+			objs = append(objs, str)
+		} else if temp == 'l' {
+			sli, err := decodeSlice(br)
+			if err != nil {
+				return objs, err
+			}
+			objs = append(objs, sli)
+		} else if temp == 'd' {
+			dict, err := decodeMap(br)
+			if err != nil {
+				return objs, err
+			}
+			objs = append(objs, dict)
+		} else {
+			return objs, ErrFormat
+		}
+	}
+
+	return
+}
+
+func BencodeDecodeFromString(str string) (objs []any, err error) {
+	return BencodeDecodeFromReader(strings.NewReader(str))
 }
